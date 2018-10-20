@@ -2,28 +2,33 @@
 
 It's a programmable tool to make you testing your APIs more handy.
 
-## The execution order
-
-* parse
-    * read yaml as config
-        * add `id` to every `test` in `tests`
-    * parse next, add dependency (TODO)
-* request
-    * tests in the same step can be parallelize
-    * format variable references before request
-    * do the request
-        * then save response to `test.results`, validate rules of header and body
-        * any fail will raise an exception except you set `test.next.stop` to `false`
-        * if `test.next.next_id` is set, the next test will be executed
-    * then next step
-
 ## How to write the pipeline
 
-The pipeline is defined in `yaml` file format. You can refer any data with `self.<name1>.<name2>`.
+The pipeline is defined in `yaml` file format. You can refer any data of it via `self.<name1>.<name2>`.
+
+A pipeline have many **test**, which is the object in the `self.tests` and have an `id` key with a detail object as it's value.
 
 A **step** in defined as a array which contains `id`s of tests in the `self.pipelines`. The tests in a **step** will be execute concurrently (TODO).
 
-After an HTTP request is done, the response result will be attached to the `test.results`, the `test` is the object in the `self.tests`, which will be accessed by it's `id`.
+After an HTTP request is done, it's response will be compared to the **rule** identified by it's `status` code. One test (request) can have multiple **rules**.
+
+And the response result will be attached to the `test.results`,  which can be accessed by the test's `id` and response's status.
+
+## The execution order
+
+* Parse
+    * Read yaml as config
+        * Add `id` to every `test` in `tests`
+    * Parse next, add dependency (TODO)
+* Request
+    * Tests in the same step can be parallelize
+    * Format variable references before request
+    * Do the request
+        * Then save response to `test.results`, validate rules of header and body.
+        * Any fail will raise an exception except you set `rule.next.stop` to `false`.
+        * If `rule.next.next_id` is set, the next test will be executed.
+        * If the next test defined by `next_id` has it's next test, the program will follow up to execute it, unless you set `rule.next.continue_next` to `false`.
+    * Then next step
 
 ## Response structure in test
 
