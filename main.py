@@ -1,4 +1,4 @@
-from requests_pipeline.parser import TestPipeLine
+from requests_pipeline import TestPipeLine
 
 
 def main(args):
