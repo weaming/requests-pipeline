@@ -1,2 +1,3 @@
 PyYAML==3.13
-objectify-json==0.1.4
+objectify-json==0.1.6
+printable==0.2.5

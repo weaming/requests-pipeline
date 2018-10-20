@@ -1,4 +1,4 @@
-__all__ = ["red", "green", "yellow", "blue", "magenta", "cyan"]
+__all__ = ["black", "red", "green", "yellow", "blue", "magenta", "cyan"]
 
 
 def get_color_code(color):
