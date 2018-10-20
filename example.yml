@@ -1,0 +1,76 @@
+login:
+  password: password
+  username: admin
+pipelines:
+  - - a
+  - - b
+    - c
+base: localhost:8080/api/
+tests:
+  a:
+    request:
+      method: get
+      uri: uri1/
+      query:
+        a: 3
+        b: 4
+      headers:
+    response:
+      - status: 200
+        body:
+          path.path.path1: 3
+          path.path.path2: 3
+        next:
+          id: b
+      - status: 404
+        body:
+          path.path.path1: 3
+          path.path.path2: 3
+        stop: false  # default is true
+        next:
+          if_success: false  # default is true
+          next_id: b
+          continue_next: false # default is true
+  b:
+    request:
+      method: post
+      uri: uri2/
+      headers:
+        X-PASSWORD: "{self.login.password}"
+        X-PRE-STATUS: "{self.tests.a.results.404.status}"
+      query:
+        username: "{self.login.username} abc"
+        b: 4
+      body:
+        a: 3
+        b: 4
+    response:
+      - status: 200
+        body:
+          path.path.path1: 3
+          path.path.path2: 3
+      - status: 403
+        body:
+          path.path.path1: 3
+          'path.path.path2 != "3"': true
+  c:
+    request:
+      method: post
+      uri: get-some-data/
+      headers:
+        X-PASSWORD: "{self.login.password}"
+      query:
+        username: "{self.login.username}"
+        b: 4
+      body:
+        a: 3
+        b: 4
+    response:
+      - status: 200
+        body:
+          path.path.path1: 3
+          path.path.path2: 3
+      - status: 404
+        body:
+          path.path.path1: 3
+          'path.path.path2 != "3"': true
