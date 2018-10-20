@@ -132,22 +132,26 @@ class TestPipeLine(Formatter):
             if DEBUG:
                 print(cyan("RULE SET:"), rule_set)
 
-            set_success = True
+            results = []
             for t in ['status', 'headers', 'body']:
                 rule_part = getattr(rule_set, t)
                 if t == 'status':
                     res_value_expression = ObjectifyJSON('status')
                     expect = rule_part
-                    success = self.process_rule(res_value_expression, expect,
-                                                t, response)
-                    set_success = set_success and success
+                    result_dict = self.process_rule(res_value_expression,
+                                                    expect, t, response)
+                    results.append(result_dict)
 
                 elif rule_part:  # type: dict
                     for res_value_expression, expect in rule_part.items():
-                        success = self.process_rule(res_value_expression,
-                                                    expect, t, response)
-                        set_success = set_success and success
-            print("{}: {}".format(cyan("RULE SET RESULT"), set_success))
+                        result_dict = self.process_rule(
+                            res_value_expression, expect, t, response)
+                        results.append(result_dict)
+
+            print(readable(results))
+            success = all(x['Success'] for x in results)
+            color_fn = green if success else red
+            print("{}: {}".format(cyan("RULE SET RESULT"), color_fn(success)))
 
     def process_rule(self, res_value_expression: ObjectifyJSON,
                      expect: ObjectifyJSON, part_type: str, response):
@@ -158,9 +162,12 @@ class TestPipeLine(Formatter):
         # print result
         result = "{} == {}".format(res_value, expect)
         success = eval(result)
-        color_fn = green if success else red
-        print(new_expression, color_fn(result))
-        return success
+        result_dict = {
+            'Expression': new_expression,
+            'Result': result,
+            "Success": success,
+        }
+        return result_dict
 
     def parse_expression(self, expression: str, part_type: str):
         if not startswithany(
