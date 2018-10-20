@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 import subprocess
 
 from urllib.parse import urljoin, urlparse, urlencode
@@ -95,7 +96,7 @@ class TestPipeLine(Formatter):
             base = 'http://' + base
         return base
 
-    def do_the_request(self, test: ObjectifyJSON):
+    def do_the_request(self, test: ObjectifyJSON, continue_next=True):
         # parse the test
         test = self.parse_test(test)
 
@@ -125,33 +126,86 @@ class TestPipeLine(Formatter):
             data=test.request.body._data,
         )
 
-        self.validate_response(test, res)
+        self.validate_response(test, res, continue_next)
 
-    def validate_response(self, test: ObjectifyJSON, response):
-        for rule_set in test.response:
-            if DEBUG:
-                print(cyan("RULE SET:"), rule_set)
+    def validate_response(self,
+                          test: ObjectifyJSON,
+                          response,
+                          continue_next=True):
+        rule_set_dict = {s.status._data: s for s in test.response}
+        assert None not in rule_set_dict, 'must give the status'
 
-            results = []
-            for t in ['status', 'headers', 'body']:
-                rule_part = getattr(rule_set, t)
-                if t == 'status':
-                    res_value_expression = ObjectifyJSON('status')
-                    expect = rule_part
+        # validate the status
+        res_value_expression = ObjectifyJSON('status')
+        expect = 'None'
+        result_dict = self.process_rule(res_value_expression, expect,
+                                        'response.status', response)
+        status = result_dict['Value']
+
+        # get the rule set
+        rule_set = rule_set_dict.get(status)
+        if not rule_set:
+            print(
+                red('Warning: response status {} is not handled'.format(
+                    status)))
+            return
+
+        # validate the rule set
+        if DEBUG:
+            print(cyan("RULE SET:"), rule_set)
+
+        results = []
+        for t in ['headers', 'body']:
+            rule_part = getattr(rule_set, t)
+            if rule_part:  # type: dict
+                for res_value_expression, expect in rule_part.items():
                     result_dict = self.process_rule(res_value_expression,
                                                     expect, t, response)
                     results.append(result_dict)
 
-                elif rule_part:  # type: dict
-                    for res_value_expression, expect in rule_part.items():
-                        result_dict = self.process_rule(
-                            res_value_expression, expect, t, response)
-                        results.append(result_dict)
+        print(readable(results))
+        success = all(x['Success'] for x in results)
+        color_fn = green if success else red
+        print("{}: {}".format(cyan("RULE SET RESULT"), color_fn(success)))
 
-            print(readable(results))
-            success = all(x['Success'] for x in results)
-            color_fn = green if success else red
-            print("{}: {}".format(cyan("RULE SET RESULT"), color_fn(success)))
+        stop = rule_set.stop._data
+        if stop is None:
+            stop = True
+
+        if stop:
+            print('Test pipeline is stopped at test {}!'.format(test.id._data))
+            sys.exit(1)
+
+        # try next test
+        if continue_next:
+            self.try_next_test(test, rule_set, response, success)
+
+    def try_next_test(self, pre_test: ObjectifyJSON, rule_set: ObjectifyJSON,
+                      response, success: bool):
+        next = rule_set.next
+        next_id = next.next_id._data
+        next_test = self.tests.get(next_id)
+        if next and next_id:
+            if not next_test:
+                raise ParseException(
+                    'next id {} does not exist'.format(next_id))
+
+            if_success = next.if_success._data
+            # default is True
+            if if_success is None:
+                if_success = True
+
+            if DEBUG:
+                print("{}: {}".format(cyan("IF SUCCESS"), if_success))
+
+            if if_success and not success:
+                return
+
+            # do the next request
+            continue_next = next.continue_next._data
+            if continue_next is None:
+                continue_next = True
+            self.do_the_request(next_test, continue_next)
 
     def process_rule(self, res_value_expression: ObjectifyJSON,
                      expect: ObjectifyJSON, part_type: str, response):
@@ -164,7 +218,8 @@ class TestPipeLine(Formatter):
         success = eval(result)
         result_dict = {
             'Expression': new_expression,
-            'Result': result,
+            'Value': res_value,
+            'Expect': expect,
             "Success": success,
         }
         return result_dict
