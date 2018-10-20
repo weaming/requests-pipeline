@@ -1,4 +1,4 @@
-from django_test_pipeline.parser import TestPipeLine
+from requests_pipeline.parser import TestPipeLine
 
 
 def main(args):
