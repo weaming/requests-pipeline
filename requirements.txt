@@ -1,3 +1,4 @@
 PyYAML==3.13
 objectify-json==0.1.7
 printable==0.2.5
+requests==2.20.0
