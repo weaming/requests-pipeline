@@ -261,7 +261,7 @@ class TestPipeLine(Formatter):
             stop = True
 
         if not success and stop:
-            print_thread("Test pipeline is stopped at test {}!".format(test.id._data))
+            print_thread('Test pipeline is stopped at test "{}"!'.format(test.id._data))
             raise ThreadExitException
 
         # try next test
