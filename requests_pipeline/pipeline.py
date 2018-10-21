@@ -16,13 +16,13 @@ DEBUG = os.getenv("DEBUG")
 
 def parse_tests(path):
     data = read_yaml(path)
-    for id, t in data['tests'].items():
-        t['id'] = id
+    for id, t in data["tests"].items():
+        t["id"] = id
     return data
 
 
 def get_terminal_size():
-    rows, columns = subprocess.check_output(['stty', 'size']).split()
+    rows, columns = subprocess.check_output(["stty", "size"]).split()
     return int(rows), int(columns)
 
 
@@ -84,46 +84,47 @@ class TestPipeLine(Formatter):
     def start(self):
         for index, step in enumerate(self.context.pipelines, start=1):
             print_row("=")
-            print("{}: {}".format(cyan("TEST {}".format(index)), step))
+            print("{}: {}".format(cyan("TESTS {}".format(index)), step))
             for test_id in step:
                 test = self.get_test(test_id)
                 if not test:
-                    raise ParseException(
-                        'test id {} does not exist'.format(test_id))
+                    raise ParseException("test id {} does not exist".format(test_id))
                 response = self.do_the_request(test)
 
     def parse_test(self, test: ObjectifyJSON):
-        results = test._data.pop('results', None)
+        results = test._data.pop("results", None)
         parsed = self.parse_dict(test._data)
         if results:
-            parsed['results'] = results
+            parsed["results"] = results
         test = ObjectifyJSON(parsed)
         return test
 
     @property
     def base(self):
         base = self.context.base._data.lower()
-        if not base.startswith('http'):
-            base = 'http://' + base
+        if not base.startswith("http"):
+            base = "http://" + base
         return base
 
     def do_the_request(self, test: ObjectifyJSON, continue_next=True):
         # parse the test
         test = self.parse_test(test)
 
-        print_row('-')
+        print_row("-")
         test_id = test.id
         test = self.get_test(test_id)
         url = urljoin(self.base, test.request.uri._data)
         # url_query = urlencode(test.request.query._data)
-        print('{}: {} {}'.format(
-            yellow(test.id), magenta(test.request.method._data.upper()),
-            yellow(url)))
+        print(
+            "{}: {} {}".format(
+                yellow(test.id), magenta(test.request.method._data.upper()), yellow(url)
+            )
+        )
         if DEBUG:
             print("TEST DATA: ", repr(test))
 
         method = test.request.method._data.lower()
-        request_func = getattr(self, method)
+        request_func = getattr(self, method, getattr(self.session, method))
         """
         def request(self, method, url,
                 params=None, data=None, headers=None, cookies=None, files=None,
@@ -139,19 +140,21 @@ class TestPipeLine(Formatter):
 
         self.validate_response(test, res, continue_next)
 
-    def validate_response(self,
-                          test: ObjectifyJSON,
-                          response,
-                          continue_next=True):
+    def validate_response(self, test: ObjectifyJSON, response, continue_next=True):
+        if not test.response:
+            print(red("Warning: test has not defined the response rules"))
+            return
+
         rule_dict = {s.status._data: s for s in test.response}
-        assert None not in rule_dict, 'must give the status'
+        assert None not in rule_dict, "must give the status"
 
         # validate the status
-        res_value_expression = ObjectifyJSON('status')
-        expect = 'None'
-        result_dict = self.process_rule(res_value_expression, expect,
-                                        'response.status', response)
-        status = result_dict['Value']
+        res_value_expression = ObjectifyJSON("status")
+        expect = "None"
+        result_dict = self.process_rule(
+            res_value_expression, expect, "response.status", response
+        )
+        status = result_dict["Value"]
 
         # attach response
         self.attach_request_response(test, response)
@@ -159,9 +162,7 @@ class TestPipeLine(Formatter):
         # get the rule set
         rule = rule_dict.get(status)
         if not rule:
-            print(
-                red('Warning: response status {} is not handled'.format(
-                    status)))
+            print(red("Warning: response status {} is not handled".format(status)))
             return
 
         # validate the rule set
@@ -169,16 +170,17 @@ class TestPipeLine(Formatter):
             print(cyan("RULE:"), rule)
 
         results = []
-        for t in ['headers', 'body']:
+        for t in ["headers", "body"]:
             rule_part = getattr(rule, t)
             if rule_part:  # type: dict
                 for res_value_expression, expect in rule_part.items():
-                    result_dict = self.process_rule(res_value_expression,
-                                                    expect, t, response)
+                    result_dict = self.process_rule(
+                        res_value_expression, expect, t, response
+                    )
                     results.append(result_dict)
 
         print(readable(results))
-        success = all(x['Success'] for x in results)
+        success = all(x["Success"] for x in results)
         color_fn = green if success else red
         print("{}: {}".format(cyan("RULE RESULT"), color_fn(success)))
 
@@ -187,22 +189,22 @@ class TestPipeLine(Formatter):
             stop = True
 
         if stop:
-            print('Test pipeline is stopped at test {}!'.format(test.id._data))
+            print("Test pipeline is stopped at test {}!".format(test.id._data))
             sys.exit(1)
 
         # try next test
         if continue_next:
             self.try_next_test(test, rule, response, success)
 
-    def try_next_test(self, pre_test: ObjectifyJSON, rule: ObjectifyJSON,
-                      response, success: bool):
+    def try_next_test(
+        self, pre_test: ObjectifyJSON, rule: ObjectifyJSON, response, success: bool
+    ):
         next = rule.next
         next_id = next.next_id._data
         next_test = self.get_test(next_id)
         if next and next_id:
             if not next_test:
-                raise ParseException(
-                    'next id {} does not exist'.format(next_id))
+                raise ParseException("next id {} does not exist".format(next_id))
 
             if_success = next.if_success._data
             # default is True
@@ -221,33 +223,37 @@ class TestPipeLine(Formatter):
                 continue_next = True
             self.do_the_request(next_test, continue_next)
 
-    def process_rule(self, res_value_expression: ObjectifyJSON,
-                     expect: ObjectifyJSON, part_type: str, response):
+    def process_rule(
+        self,
+        res_value_expression: ObjectifyJSON,
+        expect: ObjectifyJSON,
+        part_type: str,
+        response,
+    ):
 
-        new_expression = self.parse_expression(res_value_expression._data,
-                                               part_type)
+        new_expression = self.parse_expression(res_value_expression._data, part_type)
         res_value = self.eval_rule_value(response, new_expression)
         # print result
         result = "{} == {}".format(res_value, expect)
         success = eval(result)
         result_dict = {
-            'Expression': new_expression,
-            'Value': res_value,
-            'Expect': expect,
+            "Expression": new_expression,
+            "Value": res_value,
+            "Expect": expect,
             "Success": success,
         }
         return result_dict
 
     def parse_expression(self, expression: str, part_type: str):
-        if not startswithany(expression, [
-                'self.', 'headers.', 'json.', 'response.', 'status', 'text.',
-                'tests.'
-        ]):
-            expression = '{}.'.format(part_type) + expression
+        if not startswithany(
+            expression,
+            ["self.", "headers.", "json.", "response.", "status", "text.", "tests."],
+        ):
+            expression = "{}.".format(part_type) + expression
         return expression
 
     def attach_request_response(self, test: ObjectifyJSON, response):
-        results = test._data.setdefault('results', {})
+        results = test._data.setdefault("results", {})
         request_context = {
             "response": response,
             "status": response.status_code,
