@@ -2,7 +2,6 @@ import os
 import json
 import sys
 import subprocess
-
 from urllib.parse import urljoin, urlparse, urlencode
 
 import requests
@@ -52,12 +51,12 @@ def println_any(data, name=None):
         print(data)
 
 
-def print_text_inline(name, text, color=cyan):
-    if isinstance(text, ObjectifyJSON):
-        text = text._data
-    if isinstance(text, str) and not text:
+def print_inline(name, data, color=cyan):
+    if isinstance(data, ObjectifyJSON):
+        data = data._data
+    if isinstance(data, str) and not data:
         return
-    print("{}: {}".format(color(name), text))
+    print("{}: {}".format(color(name), data))
 
 
 class TestPipeLine(Formatter):
@@ -103,7 +102,7 @@ class TestPipeLine(Formatter):
     def start(self):
         for index, step in enumerate(self.context.pipelines, start=1):
             print_row("=")
-            print_text_inline("TESTS", index)
+            print_inline("TESTS {}".format(index), step)
             for test_id in step:
                 test = self.get_test(test_id)
                 if not test:
@@ -128,10 +127,10 @@ class TestPipeLine(Formatter):
     def do_the_request(self, test: ObjectifyJSON, continue_next=True):
         # parse the test
         test = self.parse_test(test)
-        if DEBUG:
-            print("TEST DATA: ", repr(test))
-
         print_row("-")
+        if DEBUG:
+            print_inline("Test Data: ", repr(test))
+
         test_id = test.id
         test = self.get_test(test_id)
         req = test.request
@@ -154,6 +153,7 @@ class TestPipeLine(Formatter):
             ("cookies", "cookies"),
             ("files", "files"),
             ("proxies", "proxies"),
+            ("timeout", "timeout"),
         ]
         response = request_func(
             url, **{x[0]: getattr(test.request, x[1])._data for x in mapping}
@@ -192,9 +192,6 @@ class TestPipeLine(Formatter):
         self.debug_response(rule, response)
 
         # validate the rule set
-        if DEBUG:
-            print_text_inline("RULE", rule)
-
         results = []
         for t in ["headers", "body"]:
             rule_part = getattr(rule, t)
@@ -211,7 +208,9 @@ class TestPipeLine(Formatter):
         else:
             success = True
         color_fn = green if success else red
-        print_text_inline("RULE RESULT", color_fn(success))
+
+        print_inline("Rule", rule)
+        print_inline("Rule Result", color_fn(success))
 
         stop = rule.stop._data
         if stop is None:
@@ -271,7 +270,7 @@ class TestPipeLine(Formatter):
                 if_success = True
 
             if DEBUG:
-                print_text_inline("IF SUCCESS", if_success)
+                print_inline("If Success", if_success)
 
             if if_success and not success:
                 return
