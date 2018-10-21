@@ -2,75 +2,62 @@ login:
   password: password
   username: admin
 pipelines:
-  - - a
-  - - b
-    - c
-base: localhost:8080/api/
+  - - json
+    - ip
+    - user-agent
+  - - headers
+base: https://httpbin.org/
 tests:
-  a:
+  json:
     request:
       method: get
-      uri: uri1/
-      query:
-        a: 3
-        b: 4
-      headers:
+      uri: /json
     response:
       - status: 200
-        body:
-          path.path.path1: 3
-          path.path.path2: 3
-        next:
-          id: b
-      - status: 404
-        body:
-          path.path.path1: 3
-          path.path.path2: 3
-        stop: false  # default is true
-        next:
-          if_success: false  # default is true
-          next_id: b
-          continue_next: false # default is true
-  b:
+        debug:
+          - body
+  headers:
     request:
-      method: post
-      uri: uri2/
+      uri: /headers
       headers:
-        X-PASSWORD: "{self.login.password}"
-        X-PRE-STATUS: "{self.tests.a.results.404.status}"
-      query:
-        username: "{self.login.username} abc"
-        b: 4
-      body:
-        a: 3
-        b: 4
+        X-DATA-A: "{self.tests.json.results.200.body.slideshow.title}"
     response:
       - status: 200
         body:
-          path.path.path1: 3
-          path.path.path2: 3
-      - status: 403
-        body:
-          path.path.path1: 3
-          'path.path.path2 != "3"': true
-  c:
+          headers['X-Data-A']: "{self.tests.json.results.200.body.slideshow.title}"
+        debug:
+          - body
+  ip:
     request:
-      method: post
-      uri: get-some-data/
-      headers:
-        X-PASSWORD: "{self.login.password}"
-      query:
-        username: "{self.login.username}"
-        b: 4
-      body:
-        a: 3
-        b: 4
+      method: get
+      uri: /ip
     response:
       - status: 200
         body:
           path.path.path1: 3
           path.path.path2: 3
-      - status: 404
-        body:
-          path.path.path1: 3
-          'path.path.path2 != "3"': true
+        stop: false
+        debug:
+          - body
+  user-agent:
+    request:
+      method: get
+      uri: /user-agent
+      headers:
+        User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"
+    response:
+      - status: 200
+        next:
+          id: baidu
+        debug:
+          - body
+  baidu:
+    request:
+      method: get
+      uri: https://www.baidu.com
+      timeout: 3
+    response:
+      - status: 200
+        debug:
+          - headers
+
