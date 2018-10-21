@@ -45,8 +45,21 @@ def println_any(data, name=None):
     if name:
         print(cyan(name))
 
+    def _default(o):
+        rv = repr(o)
+        if isinstance(rv, str):
+            try:
+                return json.loads(rv)
+            except:
+                pass
+            try:
+                return eval(rv)
+            except:
+                pass
+        return rv
+
     if isinstance(data, (list, tuple, dict)):
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print(json.dumps(data, indent=2, ensure_ascii=False, default=_default))
     else:
         print(data)
 
@@ -75,8 +88,7 @@ class TestPipeLine(Formatter):
         """
         self.path = path
         config = parse_tests(path)
-        self.config = ObjectifyJSON(config)
-        self.context = ObjectifyJSON(config.copy())
+        self.context = ObjectifyJSON(config)
 
         # requests
         self.session = requests.Session()
@@ -96,7 +108,7 @@ class TestPipeLine(Formatter):
 
     @property
     def login_info(self):
-        login_info = self.config.login._data
+        login_info = self.context.login._data
         return login_info
 
     def start(self):
@@ -130,6 +142,7 @@ class TestPipeLine(Formatter):
         print_row("-")
         if DEBUG:
             print_inline("Test Data: ", repr(test))
+            println_any(self.tests, name="Tests Data")
 
         test_id = test.id
         test = self.get_test(test_id)
@@ -155,9 +168,14 @@ class TestPipeLine(Formatter):
             ("proxies", "proxies"),
             ("timeout", "timeout"),
         ]
-        response = request_func(
-            url, **{x[0]: getattr(test.request, x[1])._data for x in mapping}
-        )
+        kwargs = {x[0]: getattr(test.request, x[1])._data for x in mapping}
+        if not kwargs.get("timeout"):
+            kwargs["timeout"] = 10
+        try:
+            response = request_func(url, **kwargs)
+        except Exception as e:
+            print_inline(test_id, str(e))
+            return
 
         self.validate_response(test, response, continue_next)
 
@@ -202,14 +220,13 @@ class TestPipeLine(Formatter):
                     )
                     results.append(result_dict)
 
+        print_inline("Rule", rule)
         if results:
-            print(readable(results))
+            println_any(magenta(readable(results)), name="Rule Detail")
             success = all(x["Success"] for x in results)
         else:
             success = True
         color_fn = green if success else red
-
-        print_inline("Rule", rule)
         print_inline("Rule Result", color_fn(success))
 
         stop = rule.stop._data
@@ -288,16 +305,18 @@ class TestPipeLine(Formatter):
         part_type: str,
         response,
     ):
-
+        if isinstance(expect, ObjectifyJSON):
+            expect = expect._data
         new_expression = self.parse_expression(res_value_expression._data, part_type)
         res_value = self.eval_rule_value(response, new_expression)
         # print result
         result = "{} == {}".format(res_value, expect)
-        success = eval(result)
+        success = res_value == expect
         result_dict = {
             "Expression": new_expression,
             "Value": res_value,
             "Expect": expect,
+            # "Types": "{}, {}".format(type(res_value), type(expect)),
             "Success": success,
         }
         return result_dict
@@ -307,7 +326,10 @@ class TestPipeLine(Formatter):
             expression,
             ["self.", "headers.", "json.", "response.", "status", "text.", "tests."],
         ):
-            expression = "{}.".format(part_type) + expression
+            if expression.startswith("["):
+                expression = "{}{}".format(part_type, expression)
+            else:
+                expression = "{}.{}".format(part_type, expression)
         return expression
 
     def attach_request_response(self, test: ObjectifyJSON, response):
@@ -335,7 +357,7 @@ class TestPipeLine(Formatter):
 
     def eval_rule_value(self, response, expression):
         status = ObjectifyJSON(response.status_code)
-        headers = ObjectifyJSON(response.headers)
+        headers = {v[0]: v[1] for v in response.headers._store.values()}
         text = ObjectifyJSON(response.text)
         json = ObjectifyJSON(self._get_json_from_response(response))
         body = json

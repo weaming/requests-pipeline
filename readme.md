@@ -4,7 +4,7 @@ It's a programmable tool to make you testing your APIs more handy.
 
 ## How to write the pipeline
 
-The pipeline is defined in `yaml` file format. You can refer any data of it via `self.<name1>.<name2>`.
+The pipeline is defined in `yaml` file format. You can refer any data of it via `self.<name1>.<name2>` in anywhere.
 
 A pipeline have many **test**, which is the object in the `self.tests` and have an `id` key with a detail object as it's value.
 
