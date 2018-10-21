@@ -52,4 +52,11 @@ tests:
         body:
           a: 3
           b: 4
+        content: ""
+        cookies:
+          a: 3
+          b: 4
+        history:
+          - response1
+          - response2
 ```

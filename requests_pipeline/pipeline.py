@@ -14,6 +14,10 @@ from .colors import *
 DEBUG = os.getenv("DEBUG")
 
 
+class ParseException(Exception):
+    pass
+
+
 def parse_tests(path):
     data = read_yaml(path)
     for id, t in data["tests"].items():
@@ -33,14 +37,27 @@ def print_row(char: str):
     print(char * TTY_COLUMNS)
 
 
-class ParseException(Exception):
-    pass
-
-
-def print_json(data):
+def println_any(data, name=None):
     if isinstance(data, ObjectifyJSON):
         data = data._data
-    print(json.dumps(data, indent=2, ensure_ascii=False))
+    if not data:
+        return
+
+    if name:
+        print(cyan(name))
+
+    if isinstance(data, (list, tuple, dict)):
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+    else:
+        print(data)
+
+
+def print_text_inline(name, text, color=cyan):
+    if isinstance(text, ObjectifyJSON):
+        text = text._data
+    if isinstance(text, str) and not text:
+        return
+    print("{}: {}".format(color(name), text))
 
 
 class TestPipeLine(Formatter):
@@ -74,6 +91,8 @@ class TestPipeLine(Formatter):
     def get_test(self, id) -> ObjectifyJSON:
         if isinstance(id, ObjectifyJSON):
             id = id._data
+        if not id:
+            return ObjectifyJSON(None)
         return getattr(self.tests, id)
 
     @property
@@ -84,7 +103,7 @@ class TestPipeLine(Formatter):
     def start(self):
         for index, step in enumerate(self.context.pipelines, start=1):
             print_row("=")
-            print("{}: {}".format(cyan("TESTS {}".format(index)), step))
+            print_text_inline("TESTS", index)
             for test_id in step:
                 test = self.get_test(test_id)
                 if not test:
@@ -109,36 +128,38 @@ class TestPipeLine(Formatter):
     def do_the_request(self, test: ObjectifyJSON, continue_next=True):
         # parse the test
         test = self.parse_test(test)
+        if DEBUG:
+            print("TEST DATA: ", repr(test))
 
         print_row("-")
         test_id = test.id
         test = self.get_test(test_id)
-        url = urljoin(self.base, test.request.uri._data)
-        # url_query = urlencode(test.request.query._data)
-        print(
-            "{}: {} {}".format(
-                yellow(test.id), magenta(test.request.method._data.upper()), yellow(url)
-            )
-        )
-        if DEBUG:
-            print("TEST DATA: ", repr(test))
+        req = test.request
+        url = urljoin(self.base, req.uri._data)
+        method = req.method._data or "get"
 
-        method = test.request.method._data.lower()
-        request_func = getattr(self, method, getattr(self.session, method))
+        self.debug_request(test.id._data, req, method, url)
+
+        request_func = getattr(self, method, getattr(self.session, method.lower()))
         """
         def request(self, method, url,
                 params=None, data=None, headers=None, cookies=None, files=None,
                 auth=None, timeout=None, allow_redirects=True, proxies=None,
                 hooks=None, stream=None, verify=None, cert=None, json=None):
         """
-        res = request_func(
-            url,
-            params=test.request.query._data,
-            headers=test.request.headers._data,
-            data=test.request.body._data,
+        mapping = [
+            ("params", "query"),
+            ("headers", "headers"),
+            ("data", "body"),
+            ("cookies", "cookies"),
+            ("files", "files"),
+            ("proxies", "proxies"),
+        ]
+        response = request_func(
+            url, **{x[0]: getattr(test.request, x[1])._data for x in mapping}
         )
 
-        self.validate_response(test, res, continue_next)
+        self.validate_response(test, response, continue_next)
 
     def validate_response(self, test: ObjectifyJSON, response, continue_next=True):
         if not test.response:
@@ -156,6 +177,8 @@ class TestPipeLine(Formatter):
         )
         status = result_dict["Value"]
 
+        print()
+
         # attach response
         self.attach_request_response(test, response)
 
@@ -165,9 +188,12 @@ class TestPipeLine(Formatter):
             print(red("Warning: response status {} is not handled".format(status)))
             return
 
+        # debug the response
+        self.debug_response(rule, response)
+
         # validate the rule set
         if DEBUG:
-            print(cyan("RULE:"), rule)
+            print_text_inline("RULE", rule)
 
         results = []
         for t in ["headers", "body"]:
@@ -179,16 +205,19 @@ class TestPipeLine(Formatter):
                     )
                     results.append(result_dict)
 
-        print(readable(results))
-        success = all(x["Success"] for x in results)
+        if results:
+            print(readable(results))
+            success = all(x["Success"] for x in results)
+        else:
+            success = True
         color_fn = green if success else red
-        print("{}: {}".format(cyan("RULE RESULT"), color_fn(success)))
+        print_text_inline("RULE RESULT", color_fn(success))
 
         stop = rule.stop._data
         if stop is None:
             stop = True
 
-        if stop:
+        if not success and stop:
             print("Test pipeline is stopped at test {}!".format(test.id._data))
             sys.exit(1)
 
@@ -196,11 +225,41 @@ class TestPipeLine(Formatter):
         if continue_next:
             self.try_next_test(test, rule, response, success)
 
+    def debug_request(
+        self, test_id: str, request: ObjectifyJSON, method: str, url: str
+    ):
+        url_query = urlencode(request.query._data or {})
+        print(
+            "{}: {} {} | {}".format(
+                yellow(test_id), magenta(method.upper()), yellow(url), blue(url_query)
+            )
+        )
+        println_any(request.headers._data, name="Request Headers")
+
+    def debug_response(self, rule: ObjectifyJSON, response):
+        debug = rule.debug._data
+        if not debug:
+            return
+        if "headers" in debug:
+            _headers = response.headers._store
+            println_any(
+                {v[0]: v[1] for v in _headers.values()}, name="Response Headers"
+            )
+        if "body" in debug:
+            body_json = self._get_json_from_response(response)
+            if body_json:
+                println_any(body_json, name="Response Body")
+            else:
+                println_any(response.text, name="Response Text")
+
     def try_next_test(
         self, pre_test: ObjectifyJSON, rule: ObjectifyJSON, response, success: bool
     ):
         next = rule.next
-        next_id = next.next_id._data
+        next_id = next.id._data
+        if not next_id:
+            return
+
         next_test = self.get_test(next_id)
         if next and next_id:
             if not next_test:
@@ -212,7 +271,7 @@ class TestPipeLine(Formatter):
                 if_success = True
 
             if DEBUG:
-                print("{}: {}".format(cyan("IF SUCCESS"), if_success))
+                print_text_inline("IF SUCCESS", if_success)
 
             if if_success and not success:
                 return
@@ -261,6 +320,9 @@ class TestPipeLine(Formatter):
             "text": response.text,
             "json": self._get_json_from_response(response),
             "body": self._get_json_from_response(response),
+            "content": response.content,
+            "cookies": response.cookies,
+            "history": response.history,
         }
         results[str(response.status_code)] = request_context
         return request_context
