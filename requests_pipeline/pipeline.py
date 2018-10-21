@@ -21,6 +21,10 @@ class ParseException(Exception):
     pass
 
 
+class ThreadExitException(Exception):
+    pass
+
+
 def get_terminal_size():
     rows, columns = subprocess.check_output(["stty", "size"]).split()
     return int(rows), int(columns)
@@ -131,12 +135,17 @@ class TestPipeLine(Formatter):
                 test = self.get_test(test_id)
                 if not test:
                     raise ParseException("test id {} does not exist".format(test_id))
-                response = self.do_the_request(test, test_id)
+                try:
+                    response = self.do_the_request(test, test_id)
+                except ThreadExitException as e:
+                    return e, THREAD.get_stdout_value()
                 return response, THREAD.get_stdout_value()
 
             future = self.pool.map(fn, step)
             for response, stdout in future:
                 print(stdout)
+                if isinstance(response, ThreadExitException):
+                    sys.exit(1)
 
     def parse_test(self, test: ObjectifyJSON):
         results = test._data.pop("results", None)
@@ -253,7 +262,7 @@ class TestPipeLine(Formatter):
 
         if not success and stop:
             print_thread("Test pipeline is stopped at test {}!".format(test.id._data))
-            sys.exit(1)
+            raise ThreadExitException
 
         # try next test
         if continue_next:
