@@ -8,7 +8,7 @@ The pipeline is defined in `yaml` file format. You can refer any data of it via 
 
 A pipeline have many **test**, which is the object in the `self.tests` and have an `id` key with a detail object as it's value.
 
-A **step** in defined as a array which contains `id`s of tests in the `self.pipelines`. The tests in a **step** will be execute concurrently (TODO).
+A **step** in defined as a array which contains `id`s of tests in the `self.pipelines`. The tests in a **step** will be execute concurrently.
 
 After an HTTP request is done, it's response will be compared to the **rule** identified by it's `status` code. One test (request) can have multiple **rules**.
 
