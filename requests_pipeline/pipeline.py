@@ -1,7 +1,6 @@
 import os
 import json
 import sys
-import subprocess
 from urllib.parse import urljoin, urlparse, urlencode
 from concurrent.futures import ThreadPoolExecutor
 
@@ -10,27 +9,10 @@ from objectify_json import ObjectifyJSON, Formatter
 from printable import readable
 from data_process.io_yaml import read_yaml
 from .colors import *
-from .thread_local import ThreadLocalData
+from .print import *
+from .errors import *
 
 DEBUG = os.getenv("DEBUG")
-
-THREAD = ThreadLocalData()
-
-
-class ParseException(Exception):
-    pass
-
-
-class ThreadExitException(Exception):
-    pass
-
-
-def get_terminal_size():
-    rows, columns = subprocess.check_output(["stty", "size"]).split()
-    return int(rows), int(columns)
-
-
-TTY_ROWS, TTY_COLUMNS = get_terminal_size()
 
 
 def parse_tests(path):
@@ -40,48 +22,11 @@ def parse_tests(path):
     return data
 
 
-def print_thread(*args, **kwargs):
-    THREAD.print(*args, **kwargs)
-
-
-def print_row(char: str):
-    print_thread(char * TTY_COLUMNS)
-
-
-def println_any(data, name=None):
-    if isinstance(data, ObjectifyJSON):
-        data = data._data
-    if not data:
-        return
-
-    if name:
-        print_thread(cyan(name))
-
-    def _default(o):
-        rv = repr(o)
-        if isinstance(rv, str):
-            try:
-                return json.loads(rv)
-            except:
-                pass
-            try:
-                return eval(rv)
-            except:
-                pass
-        return rv
-
-    if isinstance(data, (list, tuple, dict)):
-        print_thread(json.dumps(data, indent=2, ensure_ascii=False, default=_default))
-    else:
-        print_thread(data)
-
-
-def print_inline(name, data, color=cyan):
-    if isinstance(data, ObjectifyJSON):
-        data = data._data
-    if isinstance(data, str) and not data:
-        return
-    print_thread("{}: {}".format(color(name), data))
+def startswithany(s, prefix_list):
+    for p in prefix_list:
+        if s.startswith(p):
+            return True
+    return False
 
 
 class TestPipeLine(Formatter):
@@ -134,7 +79,8 @@ class TestPipeLine(Formatter):
             def fn(test_id):
                 test = self.get_test(test_id)
                 if not test:
-                    raise ParseException("test id {} does not exist".format(test_id))
+                    raise ParseException(
+                        "test id {} does not exist".format(test_id))
                 try:
                     response = self.do_the_request(test, test_id)
                 except ThreadExitException as e:
@@ -150,6 +96,9 @@ class TestPipeLine(Formatter):
     def parse_test(self, test: ObjectifyJSON):
         results = test._data.pop("results", None)
         parsed = self.parse_dict(test._data)
+
+        # read data from file if str value startswith "file:"
+
         if results:
             parsed["results"] = results
         test = ObjectifyJSON(parsed)
@@ -178,7 +127,8 @@ class TestPipeLine(Formatter):
 
         self.debug_request(test.id._data, req, method, url)
 
-        request_func = getattr(self, method, getattr(self.session, method.lower()))
+        request_func = getattr(self, method,
+                               getattr(self.session, method.lower()))
         """
         def request(self, method, url,
                 params=None, data=None, headers=None, cookies=None, files=None,
@@ -206,9 +156,13 @@ class TestPipeLine(Formatter):
         self.validate_response(test, response, continue_next)
         return response
 
-    def validate_response(self, test: ObjectifyJSON, response, continue_next=True):
+    def validate_response(self,
+                          test: ObjectifyJSON,
+                          response,
+                          continue_next=True):
         if not test.response:
-            print_thread(red("Warning: test has not defined the response rules"))
+            print_thread(
+                red("Warning: test has not defined the response rules"))
             return
 
         rule_dict = {s.status._data: s for s in test.response}
@@ -217,9 +171,8 @@ class TestPipeLine(Formatter):
         # validate the status
         res_value_expression = ObjectifyJSON("status")
         expect = "None"
-        result_dict = self.process_rule(
-            res_value_expression, expect, "response.status", response
-        )
+        result_dict = self.process_rule(res_value_expression, expect,
+                                        "response.status", response)
         status = result_dict["Value"]
 
         # attach response
@@ -229,8 +182,8 @@ class TestPipeLine(Formatter):
         rule = rule_dict.get(status)
         if not rule:
             print_thread(
-                red("Warning: response status {} is not handled".format(status))
-            )
+                red("Warning: response status {} is not handled".format(
+                    status)))
             return
 
         # debug the response
@@ -242,9 +195,8 @@ class TestPipeLine(Formatter):
             rule_part = getattr(rule, t)
             if rule_part:  # type: dict
                 for res_value_expression, expect in rule_part.items():
-                    result_dict = self.process_rule(
-                        res_value_expression, expect, t, response
-                    )
+                    result_dict = self.process_rule(res_value_expression,
+                                                    expect, t, response)
                     results.append(result_dict)
 
         print_inline("Rule", rule)
@@ -261,22 +213,20 @@ class TestPipeLine(Formatter):
             stop = True
 
         if not success and stop:
-            print_thread('Test pipeline is stopped at test "{}"!'.format(test.id._data))
+            print_thread('Test pipeline is stopped at test "{}"!'.format(
+                test.id._data))
             raise ThreadExitException
 
         # try next test
         if continue_next:
             self.try_next_test(test, rule, response, success)
 
-    def debug_request(
-        self, test_id: str, request: ObjectifyJSON, method: str, url: str
-    ):
+    def debug_request(self, test_id: str, request: ObjectifyJSON, method: str,
+                      url: str):
         url_query = urlencode(request.query._data or {})
-        print_thread(
-            "{}: {} {} | {}".format(
-                yellow(test_id), magenta(method.upper()), yellow(url), blue(url_query)
-            )
-        )
+        print_thread("{}: {} {} | {}".format(
+            yellow(test_id), magenta(method.upper()), yellow(url),
+            blue(url_query)))
         println_any(request.headers._data, name="Request Headers")
 
     def debug_response(self, rule: ObjectifyJSON, response):
@@ -286,8 +236,9 @@ class TestPipeLine(Formatter):
         if "headers" in debug:
             _headers = response.headers._store
             println_any(
-                {v[0]: v[1] for v in _headers.values()}, name="Response Headers"
-            )
+                {v[0]: v[1]
+                 for v in _headers.values()},
+                name="Response Headers")
         if "body" in debug:
             body_json = self._get_json_from_response(response)
             if body_json:
@@ -295,9 +246,8 @@ class TestPipeLine(Formatter):
             else:
                 println_any(response.text, name="Response Text")
 
-    def try_next_test(
-        self, pre_test: ObjectifyJSON, rule: ObjectifyJSON, response, success: bool
-    ):
+    def try_next_test(self, pre_test: ObjectifyJSON, rule: ObjectifyJSON,
+                      response, success: bool):
         next = rule.next
         next_id = next.id._data
         if not next_id:
@@ -306,7 +256,8 @@ class TestPipeLine(Formatter):
         next_test = self.get_test(next_id)
         if next and next_id:
             if not next_test:
-                raise ParseException("next id {} does not exist".format(next_id))
+                raise ParseException(
+                    "next id {} does not exist".format(next_id))
 
             if_success = next.if_success._data
             # default is True
@@ -326,15 +277,16 @@ class TestPipeLine(Formatter):
             self.do_the_request(next_test, continue_next)
 
     def process_rule(
-        self,
-        res_value_expression: ObjectifyJSON,
-        expect: ObjectifyJSON,
-        part_type: str,
-        response,
+            self,
+            res_value_expression: ObjectifyJSON,
+            expect: ObjectifyJSON,
+            part_type: str,
+            response,
     ):
         if isinstance(expect, ObjectifyJSON):
             expect = expect._data
-        new_expression = self.parse_expression(res_value_expression._data, part_type)
+        new_expression = self.parse_expression(res_value_expression._data,
+                                               part_type)
         res_value = self.eval_rule_value(response, new_expression)
         # print result
         result = "{} == {}".format(res_value, expect)
@@ -350,8 +302,11 @@ class TestPipeLine(Formatter):
 
     def parse_expression(self, expression: str, part_type: str):
         if not startswithany(
-            expression,
-            ["self.", "headers.", "json.", "response.", "status", "text.", "tests."],
+                expression,
+            [
+                "self.", "headers.", "json.", "response.", "status", "text.",
+                "tests."
+            ],
         ):
             if expression.startswith("["):
                 expression = "{}{}".format(part_type, expression)
@@ -399,10 +354,3 @@ class TestPipeLine(Formatter):
         if isinstance(rv, ObjectifyJSON):
             return rv._data
         return rv
-
-
-def startswithany(s, prefix_list):
-    for p in prefix_list:
-        if s.startswith(p):
-            return True
-    return False
