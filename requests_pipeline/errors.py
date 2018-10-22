@@ -1,6 +1,6 @@
-class ParseException(Exception):
+class ThreadExitException(Exception):
     pass
 
 
-class ThreadExitException(Exception):
+class ParseException(ThreadExitException):
     pass

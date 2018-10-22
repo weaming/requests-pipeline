@@ -1,4 +1,3 @@
-import copy
 from decimal import Decimal
 
 
@@ -13,11 +12,11 @@ def is_number(value):
 
 class DictIterator(object):
     def __init__(self, data: dict):
-        self.data = copy.deepcopy(data)
+        self.data = data
         if hasattr(self, 'init') and callable(self.init):
             self.init()
 
-    def transfer(self):
+    def transform(self):
         return self._transfer_dict(self.data)
 
     def _transfer_dict(self, data: dict):

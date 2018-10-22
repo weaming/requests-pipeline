@@ -11,6 +11,7 @@ from data_process.io_yaml import read_yaml
 from .colors import *
 from .print import *
 from .errors import *
+from .iter_dict import DictIterator
 
 DEBUG = os.getenv("DEBUG")
 
@@ -27,6 +28,26 @@ def startswithany(s, prefix_list):
         if s.startswith(p):
             return True
     return False
+
+
+def read_file(path, root=None, is_json=False):
+    if root:
+        path = os.path.join(root, path)
+    with open(path, 'r') as f:
+        text = f.read()
+        if is_json:
+            return json.loads(text)
+        return text.strip()
+
+
+class DictParser(DictIterator):
+    def value_string(self, value):
+        for prefix in ['file:', 'json:']:
+            if value.startswith(prefix):
+                return read_file(
+                    value[len(prefix):].strip(),
+                    is_json=True if prefix == 'json:' else False)
+        return value
 
 
 class TestPipeLine(Formatter):
@@ -79,8 +100,8 @@ class TestPipeLine(Formatter):
             def fn(test_id):
                 test = self.get_test(test_id)
                 if not test:
-                    raise ParseException(
-                        "test id {} does not exist".format(test_id))
+                    print(red("test id {} does not exist".format(test_id)))
+                    sys.exit(1)
                 try:
                     response = self.do_the_request(test, test_id)
                 except ThreadExitException as e:
@@ -91,6 +112,7 @@ class TestPipeLine(Formatter):
             for response, stdout in future:
                 print(stdout)
                 if isinstance(response, ThreadExitException):
+                    print(red(response))
                     sys.exit(1)
 
     def parse_test(self, test: ObjectifyJSON):
@@ -98,6 +120,7 @@ class TestPipeLine(Formatter):
         parsed = self.parse_dict(test._data)
 
         # read data from file if str value startswith "file:"
+        parsed = DictParser(parsed).transform()
 
         if results:
             parsed["results"] = results

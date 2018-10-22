@@ -6,6 +6,7 @@ pipelines:
     - ip
     - user-agent
   - - headers
+    - post
 base: https://httpbin.org/
 tests:
   json:
@@ -23,6 +24,7 @@ tests:
       uri: /headers
       headers:
         X-DATA-A: "{self.tests.json.results.200.body.slideshow.title}"
+        X-DATA-B: "file: ./data/header.txt"
     response:
       - status: 200
         body:
@@ -62,4 +64,14 @@ tests:
       - status: 200
         debug:
           - headers
+  post:
+    request:
+      method: post
+      uri: /post
+      body:
+        data: "json: ./data/body.json"
+    response:
+      - status: 200
+        debug:
+          - body
 
