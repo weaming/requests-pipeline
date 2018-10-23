@@ -11,6 +11,7 @@ from data_process.io_yaml import read_yaml
 from .colors import *
 from .print import *
 from .errors import *
+from .convert import *
 from .iter_dict import DictIterator
 
 DEBUG = os.getenv("DEBUG")
@@ -33,7 +34,7 @@ def startswithany(s, prefix_list):
 def read_file(path, root=None, is_json=False):
     if root:
         path = os.path.join(root, path)
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         text = f.read()
         if is_json:
             return json.loads(text)
@@ -42,11 +43,20 @@ def read_file(path, root=None, is_json=False):
 
 class DictParser(DictIterator):
     def value_string(self, value):
-        for prefix in ['file:', 'json:']:
+        # read
+        prefix = "read:"
+        file_path = value[len(prefix) :].strip()
+
+        if value.startswith(prefix):
+            return open(file_path, "rb")
+
+        # others
+        for prefix in ["file:", "json:"]:
             if value.startswith(prefix):
+                file_path = value[len(prefix) :].strip()
                 return read_file(
-                    value[len(prefix):].strip(),
-                    is_json=True if prefix == 'json:' else False)
+                    file_path, is_json=True if prefix == "json:" else False
+                )
         return value
 
 
@@ -150,24 +160,32 @@ class TestPipeLine(Formatter):
 
         self.debug_request(test.id._data, req, method, url)
 
-        request_func = getattr(self, method,
-                               getattr(self.session, method.lower()))
+        request_func = getattr(self, method, getattr(self.session, method.lower()))
         """
         def request(self, method, url,
                 params=None, data=None, headers=None, cookies=None, files=None,
                 auth=None, timeout=None, allow_redirects=True, proxies=None,
                 hooks=None, stream=None, verify=None, cert=None, json=None):
         """
+
         mapping = [
             ("params", "query"),
             ("headers", "headers"),
             ("data", "body"),
-            ("cookies", "cookies"),
+            ("cookies", "cookies", new_cookie),
             ("files", "files"),
+            ("auth", "auth", to_tuple),
             ("proxies", "proxies"),
             ("timeout", "timeout"),
         ]
-        kwargs = {x[0]: getattr(test.request, x[1])._data for x in mapping}
+        kwargs = {}
+        for x in mapping:
+            key = x[0]
+            value = getattr(test.request, x[1])._data
+            if len(x) > 2:
+                value = x[2](value)
+            kwargs[key] = value
+
         if not kwargs.get("timeout"):
             kwargs["timeout"] = 10
         try:
@@ -179,13 +197,9 @@ class TestPipeLine(Formatter):
         self.validate_response(test, response, continue_next)
         return response
 
-    def validate_response(self,
-                          test: ObjectifyJSON,
-                          response,
-                          continue_next=True):
+    def validate_response(self, test: ObjectifyJSON, response, continue_next=True):
         if not test.response:
-            print_thread(
-                red("Warning: test has not defined the response rules"))
+            print_thread(red("Warning: test has not defined the response rules"))
             return
 
         rule_dict = {s.status._data: s for s in test.response}
@@ -194,8 +208,9 @@ class TestPipeLine(Formatter):
         # validate the status
         res_value_expression = ObjectifyJSON("status")
         expect = "None"
-        result_dict = self.process_rule(res_value_expression, expect,
-                                        "response.status", response)
+        result_dict = self.process_rule(
+            res_value_expression, expect, "response.status", response
+        )
         status = result_dict["Value"]
 
         # attach response
@@ -205,8 +220,8 @@ class TestPipeLine(Formatter):
         rule = rule_dict.get(status)
         if not rule:
             print_thread(
-                red("Warning: response status {} is not handled".format(
-                    status)))
+                red("Warning: response status {} is not handled".format(status))
+            )
             return
 
         # debug the response
@@ -218,8 +233,9 @@ class TestPipeLine(Formatter):
             rule_part = getattr(rule, t)
             if rule_part:  # type: dict
                 for res_value_expression, expect in rule_part.items():
-                    result_dict = self.process_rule(res_value_expression,
-                                                    expect, t, response)
+                    result_dict = self.process_rule(
+                        res_value_expression, expect, t, response
+                    )
                     results.append(result_dict)
 
         print_inline("Rule", rule)
@@ -236,20 +252,22 @@ class TestPipeLine(Formatter):
             stop = True
 
         if not success and stop:
-            print_thread('Test pipeline is stopped at test "{}"!'.format(
-                test.id._data))
+            print_thread('Test pipeline is stopped at test "{}"!'.format(test.id._data))
             raise ThreadExitException
 
         # try next test
         if continue_next:
             self.try_next_test(test, rule, response, success)
 
-    def debug_request(self, test_id: str, request: ObjectifyJSON, method: str,
-                      url: str):
+    def debug_request(
+        self, test_id: str, request: ObjectifyJSON, method: str, url: str
+    ):
         url_query = urlencode(request.query._data or {})
-        print_thread("{}: {} {} | {}".format(
-            yellow(test_id), magenta(method.upper()), yellow(url),
-            blue(url_query)))
+        print_thread(
+            "{}: {} {} | {}".format(
+                yellow(test_id), magenta(method.upper()), yellow(url), blue(url_query)
+            )
+        )
         println_any(request.headers._data, name="Request Headers")
 
     def debug_response(self, rule: ObjectifyJSON, response):
@@ -259,9 +277,8 @@ class TestPipeLine(Formatter):
         if "headers" in debug:
             _headers = response.headers._store
             println_any(
-                {v[0]: v[1]
-                 for v in _headers.values()},
-                name="Response Headers")
+                {v[0]: v[1] for v in _headers.values()}, name="Response Headers"
+            )
         if "body" in debug:
             body_json = self._get_json_from_response(response)
             if body_json:
@@ -269,8 +286,9 @@ class TestPipeLine(Formatter):
             else:
                 println_any(response.text, name="Response Text")
 
-    def try_next_test(self, pre_test: ObjectifyJSON, rule: ObjectifyJSON,
-                      response, success: bool):
+    def try_next_test(
+        self, pre_test: ObjectifyJSON, rule: ObjectifyJSON, response, success: bool
+    ):
         next = rule.next
         next_id = next.id._data
         if not next_id:
@@ -279,8 +297,7 @@ class TestPipeLine(Formatter):
         next_test = self.get_test(next_id)
         if next and next_id:
             if not next_test:
-                raise ParseException(
-                    "next id {} does not exist".format(next_id))
+                raise ParseException("next id {} does not exist".format(next_id))
 
             if_success = next.if_success._data
             # default is True
@@ -300,16 +317,15 @@ class TestPipeLine(Formatter):
             self.do_the_request(next_test, continue_next)
 
     def process_rule(
-            self,
-            res_value_expression: ObjectifyJSON,
-            expect: ObjectifyJSON,
-            part_type: str,
-            response,
+        self,
+        res_value_expression: ObjectifyJSON,
+        expect: ObjectifyJSON,
+        part_type: str,
+        response,
     ):
         if isinstance(expect, ObjectifyJSON):
             expect = expect._data
-        new_expression = self.parse_expression(res_value_expression._data,
-                                               part_type)
+        new_expression = self.parse_expression(res_value_expression._data, part_type)
         res_value = self.eval_rule_value(response, new_expression)
         # print result
         result = "{} == {}".format(res_value, expect)
@@ -325,11 +341,8 @@ class TestPipeLine(Formatter):
 
     def parse_expression(self, expression: str, part_type: str):
         if not startswithany(
-                expression,
-            [
-                "self.", "headers.", "json.", "response.", "status", "text.",
-                "tests."
-            ],
+            expression,
+            ["self.", "headers.", "json.", "response.", "status", "text.", "tests."],
         ):
             if expression.startswith("["):
                 expression = "{}{}".format(part_type, expression)

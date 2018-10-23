@@ -19,7 +19,7 @@ And the response result will be attached to the `test.results`,  which can be ac
 * Parse
     * Read yaml as config
         * Add `id` to every `test` in `tests`
-    * Parse next, add dependency (TODO)
+    * Parse next, add dependency
 * Request
     * Tests in the same step can be parallelize
     * Format variable references before request
@@ -60,3 +60,8 @@ tests:
           - response1
           - response2
 ```
+
+## TODO
+
+- [ ] more detail in doc
+- [ ] raise if invalid dependencies order

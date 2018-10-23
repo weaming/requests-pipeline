@@ -2,6 +2,7 @@ login:
   password: password
   username: admin
 pipelines:
+  - - echo
   - - json
     - ip
     - user-agent
@@ -9,6 +10,29 @@ pipelines:
     - post
 base: https://httpbin.org/
 tests:
+  echo:
+    request:
+      method: get
+      uri: http://echo.drink.cafe/echo
+      files: # http://docs.python-requests.org/en/master/user/advanced/#post-multiple-multipart-encoded-files
+        - - form_field_name
+          - - the file name
+            - "read:example.yml"
+            - "text/plain"
+      auth:
+        - user
+        - pass
+      cookies:
+        - name: Cookie-One
+          value: hello world
+          domain: "{self.base}"
+        - name: Cookie-2
+          value: hello world
+          domain: "{self.base}"
+    response:
+      - status: 200
+        debug:
+          - body
   json:
     request:
       method: get
