@@ -14,6 +14,8 @@ After an HTTP request is done, it's response will be compared to the **rule** id
 
 And the response result will be attached to the `test.results`,  which can be accessed by the test's `id` and response's status.
 
+You can access environments dict via `self.env`.
+
 ## The execution order
 
 * Parse
@@ -34,7 +36,7 @@ And the response result will be attached to the `test.results`,  which can be ac
 
 The response result returned by the `requests` library will be updated to the test in context, then you can refer to the value by `self.tests.<test_id>.results.<status_code>.<the value>`.
 
-The `body` is the same as `json` field.
+The `json` is same as `body`.
 
 ```
 tests:
@@ -46,10 +48,10 @@ tests:
           a: 3
           b: 4
         text: ""
-        json:
+        body:
           a: 3
           b: 4
-        body:
+        json:
           a: 3
           b: 4
         content: ""

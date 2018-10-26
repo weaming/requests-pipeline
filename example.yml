@@ -19,6 +19,8 @@ tests:
           - - the file name
             - "read:example.yml"
             - "text/plain"
+      query:
+        pwd: "{self.env.PWD}"
       auth:
         - user
         - pass
@@ -47,12 +49,12 @@ tests:
     request:
       uri: /headers
       headers:
-        X-DATA-A: "{self.tests.json.results.200.body.slideshow.title}"
+        X-DATA-A: "{self.tests.json.results.200.json.slideshow.title}"
         X-DATA-B: "file: ./data/header.txt"
     response:
       - status: 200
         body:
-          headers['X-Data-A']: "{self.tests.json.results.200.body.slideshow.title}"
+          headers['X-Data-A']: "{self.tests.json.results.200.json.slideshow.title}"
         debug:
           - body
   ip:

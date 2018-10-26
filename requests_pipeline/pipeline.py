@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse, urlencode
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
-from objectify_json import ObjectifyJSON, Formatter
+from objectify_json import ObjectifyJSON, Formatter, eval_with_context
 from printable import readable
 from data_process.io_yaml import read_yaml
 from .colors import *
@@ -76,6 +76,8 @@ class TestPipeLine(Formatter):
         """
         self.path = path
         config = parse_tests(path)
+        # add env
+        config["env"] = dict(os.environ)
         self.context = ObjectifyJSON(config)
 
         # requests
@@ -374,18 +376,23 @@ class TestPipeLine(Formatter):
         return js
 
     def eval_rule_value(self, response, expression):
-        status = ObjectifyJSON(response.status_code)
-        headers = {v[0]: v[1] for v in response.headers._store.values()}
-        text = ObjectifyJSON(response.text)
-        json = ObjectifyJSON(self._get_json_from_response(response))
-        body = json
-
-        tests = self.tests
+        body = ObjectifyJSON(self._get_json_from_response(response))
+        context = dict(
+            status=ObjectifyJSON(response.status_code),
+            headers={v[0]: v[1] for v in response.headers._store.values()},
+            text=ObjectifyJSON(response.text),
+            body=body,
+            json=body,
+            tests=self.tests,
+            # get environment
+            env=os.getenv,
+        )
 
         try:
-            rv = eval(expression)
+            rv = eval_with_context(expression, context=context)
         except Exception as e:
             print_thread(expression)
+            print_thread(context)
             raise
         if isinstance(rv, ObjectifyJSON):
             return rv._data
