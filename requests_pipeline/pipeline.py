@@ -384,8 +384,6 @@ class TestPipeLine(Formatter):
             body=body,
             json=body,
             tests=self.tests,
-            # get environment
-            env=os.getenv,
         )
 
         try:
